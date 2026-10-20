@@ -246,7 +246,8 @@ class App(tk.Tk):
 
     def worker(self, rom_dir, out_dir, ext_text, skip_existing, system_name):
         global system_name_for_run
-        system_name_for_run = system_name\n        rows = []
+        system_name_for_run = system_name
+        rows = []
         try:
             out_dir.mkdir(parents=True, exist_ok=True)
             exts = {"." + x.strip().lower().lstrip(".") for x in ext_text.split(",") if x.strip()}
