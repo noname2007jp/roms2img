@@ -239,7 +239,7 @@ class App(tk.Tk):
         system_name = self.system_name.get().strip()
         if not system_name:
             messagebox.showerror("入力エラー", "Libretroシステム名を入力してください。"); self.busy = False; self.start_btn.configure(state="normal"); self.stop_btn.configure(state="disabled"); return
-        if not messagebox.askyesno("システム名の確認", f"Libretroの画像フォルダ名を次の名前として検索します。\\n\\n{system_name}\\n\\nROMフォルダ名とは異なる場合があります。正しいですか？\\n\\n画像フォルダ例：{system_name}/Named_Boxarts/"):
+        if not messagebox.askyesno("システム名の確認", f"Libretroの画像フォルダ名を次の名前として検索します。\n\n{system_name}\n\nROMフォルダ名とは異なる場合があります。正しいですか？\n\n画像フォルダ例：{system_name}/Named_Boxarts/"):
             self.busy = False; self.start_btn.configure(state="normal"); self.stop_btn.configure(state="disabled"); return
         threading.Thread(target=self.worker, args=(rom, out, self.exts.get(), self.skip.get(), system_name), daemon=True).start()
 
