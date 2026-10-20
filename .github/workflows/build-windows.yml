@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install PyInstaller
-        run: python -m pip install --upgrade pip pyinstaller
+        run: python -m pip install --upgrade pip pyinstaller pillow
       - name: Build EXE
         run: pyinstaller --noconfirm --clean --onefile --windowed --name roms2img src/roms2img.py
       - name: Upload EXE artifact
