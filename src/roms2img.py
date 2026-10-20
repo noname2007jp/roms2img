@@ -290,7 +290,12 @@ class App(tk.Tk):
                     self.after(0, lambda value=i: self.bar.configure(value=value))
                     continue
                 try:
-                    libretro = libretro_candidates(rom.name)
+                    libretro_error = None
+                    try:
+                        libretro = libretro_candidates(rom.name)
+                    except Exception as e:
+                        libretro = None
+                        libretro_error = str(e)
                     if libretro:
                         image_url, image_kind, source_page = libretro
                         source_name = "Libretro/" + image_kind
@@ -298,6 +303,8 @@ class App(tk.Tk):
                         image_url, source_page = find_thegamesdb_image(rom.name)
                         image_kind = "TheGamesDB"
                         source_name = "TheGamesDB"
+                        if libretro_error:
+                            source_page += " | Libretro lookup error: " + libretro_error
                     data = get_bytes(image_url)
                     if not data.startswith(b"\x89PNG\r\n\x1a\n"):
                         # TheGamesDB may serve JPEG artwork. Convert to PNG when Pillow is available.
