@@ -1,4 +1,5 @@
 import csv, json, os, re, threading, time, urllib.parse, urllib.request
+from html.parser import HTMLParser
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -45,7 +46,7 @@ def search_term(filename):
     stem = re.sub(r"\s*[\[(][^\])]*[\])]\s*$", "", stem).strip()
     return re.sub(r"\s+", " ", stem)
 
-class PageParser(__import__("html.parser", fromlist=["HTMLParser"]).HTMLParser):
+class PageParser(HTMLParser):
     def __init__(self):
         super().__init__()
         self.images = []
