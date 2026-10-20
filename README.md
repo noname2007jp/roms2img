@@ -6,11 +6,11 @@ Windows GUI tool that downloads SNES artwork as PNG, using Libretro thumbnails f
 - Recursively scans a selected ROM folder.
 - Searches Libretro thumbnails in this order: `Named_Boxarts`, `Named_Snaps`, `Named_Titles`.
 - Tries the exact ROM filename first (including tags such as `(Japan)`), then filename variants; falls back to TheGamesDB if Libretro has no match.
-- Asks you to confirm the Libretro system folder name before starting. The default for SNES is `Nintendo - Super Nintendo Entertainment System`; this is independent of the local ROM folder name.
+- Provides an editable, searchable dropdown of common Libretro system folder names. Type part of a system name to filter the list; custom names can also be entered. The default for SNES is `Nintendo - Super Nintendo Entertainment System`.
+- Asks you to confirm the selected Libretro system folder name before starting; this is independent of the local ROM folder name.
 - The Libretro thumbnail directory follows the system/playlist naming convention documented by [Libretro](https://docs.libretro.com/guides/roms-playlists-thumbnails/).
 - Saves images to a separate output folder as `ROM filename.png`.
 - Skips existing PNGs so a run can be resumed.
-- Writes `download_report.csv` with success, missing, failed, skipped, and filename-collision records.
 - GitHub Actions builds a standalone Windows executable.
 
 ## Download the EXE
@@ -25,6 +25,6 @@ python src/roms2img.py
 
 ## Notes
 - Internet access to TheGamesDB is required.
-- Before searching, removes the ROM extension and a trailing parenthesized/bracketed tag such as `(Japan)` or `[Rev 1]`. TheGamesDB search results can include multiple platforms or editions, so check the downloaded images and `download_report.csv`.
-- Since all images go into one flat output folder, ROMs with duplicate base filenames in different subfolders are reported as collisions and are not overwritten.
+- Before searching TheGamesDB, removes the ROM extension and a trailing parenthesized/bracketed tag such as `(Japan)` or `[Rev 1]`. TheGamesDB search results can include multiple platforms or editions, so check the downloaded images.
+- Since all images go into one flat output folder, ROMs with duplicate base filenames in different subfolders are skipped as filename collisions and are not overwritten.
 - This tool retrieves images from [TheGamesDB](https://thegamesdb.net/). JPEG artwork is converted to PNG using Pillow. Follow TheGamesDB's terms and rights notices.
