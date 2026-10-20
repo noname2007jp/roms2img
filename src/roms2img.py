@@ -194,7 +194,14 @@ class App(tk.Tk):
         ttk.Button(f, text="参照...", command=self.choose_out).grid(row=1, column=2, padx=6, pady=5)
         ttk.Label(f, text="対象拡張子").grid(row=2, column=0, sticky="w", padx=6, pady=5)
         ttk.Entry(f, textvariable=self.exts).grid(row=2, column=1, sticky="ew", padx=6, pady=5)
-        ttk.Label(f, text="Libretroシステム名").grid(row=3, column=0, sticky="w", padx=6, pady=5)\n        ttk.Entry(f, textvariable=self.system_name).grid(row=3, column=1, sticky="ew", padx=6, pady=5)\n        ttk.Checkbutton(f, text="既存PNGをスキップして再開", variable=self.skip).grid(row=4, column=1, sticky="w", padx=6, pady=5)\n        ttk.Label(f, text="取得順：Libretroのパッケージ画像 → ゲーム画面 → タイトル画面 → TheGamesDB。").grid(row=5, column=0, columnspan=3, sticky="w", padx=6, pady=5)\n        self.bar = ttk.Progressbar(f, mode="determinate"); self.bar.grid(row=6, column=0, columnspan=3, sticky="ew", padx=6, pady=5)\n        ttk.Label(f, textvariable=self.status).grid(row=7, column=0, columnspan=3, sticky="w", padx=6, pady=5)\n        self.log = tk.Text(f, height=19, wrap="word", state="disabled"); self.log.grid(row=8, column=0, columnspan=3, sticky="nsew", padx=6, pady=5)\n        buttons = ttk.Frame(f); buttons.grid(row=9, column=0, columnspan=3, sticky="w", padx=6, pady=5)
+        ttk.Label(f, text="Libretroシステム名").grid(row=3, column=0, sticky="w", padx=6, pady=5)
+        ttk.Entry(f, textvariable=self.system_name).grid(row=3, column=1, sticky="ew", padx=6, pady=5)
+        ttk.Checkbutton(f, text="既存PNGをスキップして再開", variable=self.skip).grid(row=4, column=1, sticky="w", padx=6, pady=5)
+        ttk.Label(f, text="取得順：Libretroのパッケージ画像 → ゲーム画面 → タイトル画面 → TheGamesDB。").grid(row=5, column=0, columnspan=3, sticky="w", padx=6, pady=5)
+        self.bar = ttk.Progressbar(f, mode="determinate"); self.bar.grid(row=6, column=0, columnspan=3, sticky="ew", padx=6, pady=5)
+        ttk.Label(f, textvariable=self.status).grid(row=7, column=0, columnspan=3, sticky="w", padx=6, pady=5)
+        self.log = tk.Text(f, height=19, wrap="word", state="disabled"); self.log.grid(row=8, column=0, columnspan=3, sticky="nsew", padx=6, pady=5)
+        buttons = ttk.Frame(f); buttons.grid(row=9, column=0, columnspan=3, sticky="w", padx=6, pady=5)
         self.start_btn = ttk.Button(buttons, text="開始", command=self.start); self.start_btn.pack(side="left")
         self.stop_btn = ttk.Button(buttons, text="停止", command=self.stop, state="disabled"); self.stop_btn.pack(side="left", padx=8)
         ttk.Button(buttons, text="保存先を開く", command=self.open_output).pack(side="left")
@@ -229,7 +236,12 @@ class App(tk.Tk):
         self.busy = True; self.stop_event.clear()
         self.start_btn.configure(state="disabled"); self.stop_btn.configure(state="normal")
         self.log.configure(state="normal"); self.log.delete("1.0", "end"); self.log.configure(state="disabled")
-        system_name = self.system_name.get().strip()\n        if not system_name:\n            messagebox.showerror("入力エラー", "Libretroシステム名を入力してください。"); self.busy = False; self.start_btn.configure(state="normal"); self.stop_btn.configure(state="disabled"); return\n        if not messagebox.askyesno("システム名の確認", f"Libretroの画像フォルダ名を次の名前として検索します。\\n\\n{system_name}\\n\\nROMフォルダ名とは異なる場合があります。正しいですか？\\n\\n画像フォルダ例：{system_name}/Named_Boxarts/"):\n            self.busy = False; self.start_btn.configure(state="normal"); self.stop_btn.configure(state="disabled"); return\n        threading.Thread(target=self.worker, args=(rom, out, self.exts.get(), self.skip.get(), system_name), daemon=True).start()
+        system_name = self.system_name.get().strip()
+        if not system_name:
+            messagebox.showerror("入力エラー", "Libretroシステム名を入力してください。"); self.busy = False; self.start_btn.configure(state="normal"); self.stop_btn.configure(state="disabled"); return
+        if not messagebox.askyesno("システム名の確認", f"Libretroの画像フォルダ名を次の名前として検索します。\\n\\n{system_name}\\n\\nROMフォルダ名とは異なる場合があります。正しいですか？\\n\\n画像フォルダ例：{system_name}/Named_Boxarts/"):
+            self.busy = False; self.start_btn.configure(state="normal"); self.stop_btn.configure(state="disabled"); return
+        threading.Thread(target=self.worker, args=(rom, out, self.exts.get(), self.skip.get(), system_name), daemon=True).start()
 
     def stop(self):
         self.stop_event.set(); self.set_status("停止要求を受け付けました。処理中の通信が終わると停止します。")
@@ -278,7 +290,15 @@ class App(tk.Tk):
                     self.after(0, lambda value=i: self.bar.configure(value=value))
                     continue
                 try:
-                    libretro = libretro_candidates(rom.name)\n                    if libretro:\n                        image_url, image_kind, source_page = libretro\n                        source_name = "Libretro/" + image_kind\n                    else:\n                        image_url, source_page = find_thegamesdb_image(rom.name)\n                        image_kind = "TheGamesDB"\n                        source_name = "TheGamesDB"\n                    data = get_bytes(image_url)
+                    libretro = libretro_candidates(rom.name)
+                    if libretro:
+                        image_url, image_kind, source_page = libretro
+                        source_name = "Libretro/" + image_kind
+                    else:
+                        image_url, source_page = find_thegamesdb_image(rom.name)
+                        image_kind = "TheGamesDB"
+                        source_name = "TheGamesDB"
+                    data = get_bytes(image_url)
                     if not data.startswith(b"\x89PNG\r\n\x1a\n"):
                         # TheGamesDB may serve JPEG artwork. Convert to PNG when Pillow is available.
                         try:
@@ -295,7 +315,8 @@ class App(tk.Tk):
                         tmp.write_bytes(data)
                         tmp.replace(dest)
                     ok += 1
-                    rows.append([str(rom), "成功", source_name, str(dest), source_page + " | " + image_url])\n                    self.log_line(f"[成功] {rom.name} ← {source_name}")
+                    rows.append([str(rom), "成功", source_name, str(dest), source_page + " | " + image_url])
+                    self.log_line(f"[成功] {rom.name} ← {source_name}")
                 except Exception as e:
                     missing += 1
                     rows.append([str(rom), "未取得", "", "", str(e)])
