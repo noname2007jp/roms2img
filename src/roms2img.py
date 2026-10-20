@@ -153,11 +153,13 @@ def libretro_candidates(filename):
     for thumb_type, label in THUMB_TYPES:
         folder_url = libretro_system_url(system_name_for_run, thumb_type)
         names = listing_names(folder_url)
+        names_by_fold = {name.casefold(): name for name in names}
         for variant in variants:
             candidate = variant + ".png"
-            if candidate in names and candidate.casefold() not in seen:
-                seen.add(candidate.casefold())
-                return urllib.parse.urljoin(folder_url, urllib.parse.quote(candidate, safe="")), label, folder_url
+            actual_name = names_by_fold.get(candidate.casefold())
+            if actual_name and actual_name.casefold() not in seen:
+                seen.add(actual_name.casefold())
+                return urllib.parse.urljoin(folder_url, urllib.parse.quote(actual_name, safe="")), label, folder_url
     return None
 
 def write_report(path, rows):
@@ -243,7 +245,8 @@ class App(tk.Tk):
         self.after(0, lambda: self.stop_btn.configure(state="disabled"))
 
     def worker(self, rom_dir, out_dir, ext_text, skip_existing, system_name):
-        global system_name_for_run\n        system_name_for_run = system_name\n        rows = []
+        global system_name_for_run
+        system_name_for_run = system_name\n        rows = []
         try:
             out_dir.mkdir(parents=True, exist_ok=True)
             exts = {"." + x.strip().lower().lstrip(".") for x in ext_text.split(",") if x.strip()}
