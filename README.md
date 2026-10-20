@@ -1,10 +1,13 @@
 # roms2img
 
-Windows GUI tool that searches TheGamesDB by ROM filename and downloads available game artwork as PNG.
+Windows GUI tool that downloads SNES artwork as PNG, using Libretro thumbnails first and TheGamesDB as a fallback.
 
 ## Features
 - Recursively scans a selected ROM folder.
-- Searches `https://thegamesdb.net/search.php?name=%s&platform_id[]=0` and tries to retrieve artwork from the search result or game detail page.
+- Searches Libretro thumbnails in this order: `Named_Boxarts`, `Named_Snaps`, `Named_Titles`.
+- Tries the exact ROM filename first (including tags such as `(Japan)`), then filename variants; falls back to TheGamesDB if Libretro has no match.
+- Asks you to confirm the Libretro system folder name before starting. The default for SNES is `Nintendo - Super Nintendo Entertainment System`; this is independent of the local ROM folder name.
+- The Libretro thumbnail directory follows the system/playlist naming convention documented by [Libretro](https://docs.libretro.com/guides/roms-playlists-thumbnails/).
 - Saves images to a separate output folder as `ROM filename.png`.
 - Skips existing PNGs so a run can be resumed.
 - Writes `download_report.csv` with success, missing, failed, skipped, and filename-collision records.
