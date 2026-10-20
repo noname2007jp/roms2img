@@ -9,6 +9,10 @@ API = f"https://api.github.com/repos/{REPO}/git/trees/{BRANCH}?recursive=1"
 RAW = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/"
 EXTS = ".sfc,.smc,.fig,.swc,.zip,.7z,.bin"
 UA = "roms2img/1.0"
+LIBRETRO_BASE = "https://thumbnails.libretro.com/"
+DEFAULT_SYSTEM = "Nintendo - Super Nintendo Entertainment System"
+THUMB_TYPES = [("Named_Boxarts", "パッケージ画像"), ("Named_Snaps", "ゲーム画面"), ("Named_Titles", "タイトル画面")]
+_THUMB_INDEX = {}
 
 def get_bytes(url, timeout=30):
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/vnd.github+json"})
@@ -121,6 +125,41 @@ def find_thegamesdb_image(filename):
         raise ValueError(f"検索結果から画像を取得できませんでした: {last_error}")
     raise ValueError("検索結果に画像がありませんでした")
 
+def libretro_system_url(system_name, thumb_type):
+    # URL path is based on the Libretro playlist/system name, not the local ROM folder.
+    return LIBRETRO_BASE + urllib.parse.quote(system_name, safe="") + "/" + thumb_type + "/"
+
+def listing_names(url):
+    if url in _THUMB_INDEX:
+        return _THUMB_INDEX[url]
+    parser = page_parser(url)
+    names = set()
+    for link in parser.links:
+        href = link.get("href", "")
+        name = urllib.parse.unquote(href.rsplit("/", 1)[-1])
+        if name.lower().endswith(".png") and "/" not in name and name not in (".", ".."):
+            names.add(name)
+    _THUMB_INDEX[url] = names
+    return names
+
+def libretro_candidates(filename):
+    # Try the exact ROM basename first, including region tags such as (Japan).
+    # Then try common filename variants. Keep image type priority explicit.
+    stem = Path(filename).stem
+    variants = [stem]
+    variants.append(re.sub(r"[&*/:< >?\\\\|]", "_", stem))
+    variants.extend([Path(v).stem for v in keys(filename)])
+    seen = set()
+    for thumb_type, label in THUMB_TYPES:
+        folder_url = libretro_system_url(system_name_for_run, thumb_type)
+        names = listing_names(folder_url)
+        for variant in variants:
+            candidate = variant + ".png"
+            if candidate in names and candidate.casefold() not in seen:
+                seen.add(candidate.casefold())
+                return urllib.parse.urljoin(folder_url, urllib.parse.quote(candidate, safe="")), label, folder_url
+    return None
+
 def write_report(path, rows):
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
@@ -136,6 +175,7 @@ class App(tk.Tk):
         self.rom_dir = tk.StringVar()
         self.out_dir = tk.StringVar()
         self.exts = tk.StringVar(value=EXTS)
+        self.system_name = tk.StringVar(value=DEFAULT_SYSTEM)
         self.skip = tk.BooleanVar(value=True)
         self.status = tk.StringVar(value="ROMフォルダと画像保存先を指定してください。")
         self.stop_event = threading.Event()
@@ -152,16 +192,11 @@ class App(tk.Tk):
         ttk.Button(f, text="参照...", command=self.choose_out).grid(row=1, column=2, padx=6, pady=5)
         ttk.Label(f, text="対象拡張子").grid(row=2, column=0, sticky="w", padx=6, pady=5)
         ttk.Entry(f, textvariable=self.exts).grid(row=2, column=1, sticky="ew", padx=6, pady=5)
-        ttk.Checkbutton(f, text="既存PNGをスキップして再開", variable=self.skip).grid(row=3, column=1, sticky="w", padx=6, pady=5)
-        ttk.Label(f, text="画像の取得順：パッケージ画像 → なければタイトル画面。ROMファイル名.png で保存します。").grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=5)
-        self.bar = ttk.Progressbar(f, mode="determinate"); self.bar.grid(row=5, column=0, columnspan=3, sticky="ew", padx=6, pady=5)
-        ttk.Label(f, textvariable=self.status).grid(row=6, column=0, columnspan=3, sticky="w", padx=6, pady=5)
-        self.log = tk.Text(f, height=19, wrap="word", state="disabled"); self.log.grid(row=7, column=0, columnspan=3, sticky="nsew", padx=6, pady=5)
-        buttons = ttk.Frame(f); buttons.grid(row=8, column=0, columnspan=3, sticky="w", padx=6, pady=5)
+        ttk.Label(f, text="Libretroシステム名").grid(row=3, column=0, sticky="w", padx=6, pady=5)\n        ttk.Entry(f, textvariable=self.system_name).grid(row=3, column=1, sticky="ew", padx=6, pady=5)\n        ttk.Checkbutton(f, text="既存PNGをスキップして再開", variable=self.skip).grid(row=4, column=1, sticky="w", padx=6, pady=5)\n        ttk.Label(f, text="取得順：Libretroのパッケージ画像 → ゲーム画面 → タイトル画面 → TheGamesDB。").grid(row=5, column=0, columnspan=3, sticky="w", padx=6, pady=5)\n        self.bar = ttk.Progressbar(f, mode="determinate"); self.bar.grid(row=6, column=0, columnspan=3, sticky="ew", padx=6, pady=5)\n        ttk.Label(f, textvariable=self.status).grid(row=7, column=0, columnspan=3, sticky="w", padx=6, pady=5)\n        self.log = tk.Text(f, height=19, wrap="word", state="disabled"); self.log.grid(row=8, column=0, columnspan=3, sticky="nsew", padx=6, pady=5)\n        buttons = ttk.Frame(f); buttons.grid(row=9, column=0, columnspan=3, sticky="w", padx=6, pady=5)
         self.start_btn = ttk.Button(buttons, text="開始", command=self.start); self.start_btn.pack(side="left")
         self.stop_btn = ttk.Button(buttons, text="停止", command=self.stop, state="disabled"); self.stop_btn.pack(side="left", padx=8)
         ttk.Button(buttons, text="保存先を開く", command=self.open_output).pack(side="left")
-        f.columnconfigure(1, weight=1); f.rowconfigure(7, weight=1)
+        f.columnconfigure(1, weight=1); f.rowconfigure(8, weight=1)
 
     def choose_rom(self):
         p = filedialog.askdirectory(title="SNES ROMフォルダ")
@@ -192,7 +227,7 @@ class App(tk.Tk):
         self.busy = True; self.stop_event.clear()
         self.start_btn.configure(state="disabled"); self.stop_btn.configure(state="normal")
         self.log.configure(state="normal"); self.log.delete("1.0", "end"); self.log.configure(state="disabled")
-        threading.Thread(target=self.worker, args=(rom, out, self.exts.get(), self.skip.get()), daemon=True).start()
+        system_name = self.system_name.get().strip()\n        if not system_name:\n            messagebox.showerror("入力エラー", "Libretroシステム名を入力してください。"); self.busy = False; self.start_btn.configure(state="normal"); self.stop_btn.configure(state="disabled"); return\n        if not messagebox.askyesno("システム名の確認", f"Libretroの画像フォルダ名を次の名前として検索します。\\n\\n{system_name}\\n\\nROMフォルダ名とは異なる場合があります。正しいですか？\\n\\n画像フォルダ例：{system_name}/Named_Boxarts/"):\n            self.busy = False; self.start_btn.configure(state="normal"); self.stop_btn.configure(state="disabled"); return\n        threading.Thread(target=self.worker, args=(rom, out, self.exts.get(), self.skip.get(), system_name), daemon=True).start()
 
     def stop(self):
         self.stop_event.set(); self.set_status("停止要求を受け付けました。処理中の通信が終わると停止します。")
@@ -207,8 +242,8 @@ class App(tk.Tk):
         self.after(0, lambda: self.start_btn.configure(state="normal"))
         self.after(0, lambda: self.stop_btn.configure(state="disabled"))
 
-    def worker(self, rom_dir, out_dir, ext_text, skip_existing):
-        rows = []
+    def worker(self, rom_dir, out_dir, ext_text, skip_existing, system_name):
+        global system_name_for_run\n        system_name_for_run = system_name\n        rows = []
         try:
             out_dir.mkdir(parents=True, exist_ok=True)
             exts = {"." + x.strip().lower().lstrip(".") for x in ext_text.split(",") if x.strip()}
@@ -220,7 +255,7 @@ class App(tk.Tk):
             for p in roms:
                 counts[p.stem.casefold()] = counts.get(p.stem.casefold(), 0) + 1
             self.after(0, lambda: self.bar.configure(maximum=len(roms), value=0))
-            self.set_status(f"{len(roms)}件を検出。TheGamesDBで検索しています...")
+            self.set_status(f"{len(roms)}件を検出。Libretroの画像を検索しています...")
             ok = missing = failed = skipped = collisions = 0
             for i, rom in enumerate(roms, 1):
                 if self.stop_event.is_set():
@@ -239,8 +274,7 @@ class App(tk.Tk):
                     self.after(0, lambda value=i: self.bar.configure(value=value))
                     continue
                 try:
-                    image_url, source_page = find_thegamesdb_image(rom.name)
-                    data = get_bytes(image_url)
+                    libretro = libretro_candidates(rom.name)\n                    if libretro:\n                        image_url, image_kind, source_page = libretro\n                        source_name = "Libretro/" + image_kind\n                    else:\n                        image_url, source_page = find_thegamesdb_image(rom.name)\n                        image_kind = "TheGamesDB"\n                        source_name = "TheGamesDB"\n                    data = get_bytes(image_url)
                     if not data.startswith(b"\x89PNG\r\n\x1a\n"):
                         # TheGamesDB may serve JPEG artwork. Convert to PNG when Pillow is available.
                         try:
@@ -257,8 +291,7 @@ class App(tk.Tk):
                         tmp.write_bytes(data)
                         tmp.replace(dest)
                     ok += 1
-                    rows.append([str(rom), "成功", "TheGamesDB", str(dest), source_page + " | " + image_url])
-                    self.log_line(f"[成功] {rom.name} ← TheGamesDB")
+                    rows.append([str(rom), "成功", source_name, str(dest), source_page + " | " + image_url])\n                    self.log_line(f"[成功] {rom.name} ← {source_name}")
                 except Exception as e:
                     missing += 1
                     rows.append([str(rom), "未取得", "", "", str(e)])
