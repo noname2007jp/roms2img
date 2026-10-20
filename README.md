@@ -1,10 +1,10 @@
 # roms2img
 
-Windows GUI tool that downloads SNES thumbnail PNGs from the Libretro Thumbnails repository.
+Windows GUI tool that searches TheGamesDB by ROM filename and downloads available game artwork as PNG.
 
 ## Features
 - Recursively scans a selected ROM folder.
-- Tries `Named_Boxarts` first, then `Named_Titles`.
+- Searches `https://thegamesdb.net/search.php?name=%s&platform_id[]=0` and tries to retrieve artwork from the search result or game detail page.
 - Saves images to a separate output folder as `ROM filename.png`.
 - Skips existing PNGs so a run can be resumed.
 - Writes `download_report.csv` with success, missing, failed, skipped, and filename-collision records.
@@ -21,6 +21,6 @@ python src/roms2img.py
 
 ## Notes
 - Internet access to GitHub is required.
-- Matching depends on the official thumbnail filenames. Unmatched ROMs are listed in the CSV; a conservative fallback avoids many incorrect fuzzy matches.
+- Before searching, removes the ROM extension and a trailing parenthesized/bracketed tag such as `(Japan)` or `[Rev 1]`. TheGamesDB search results can include multiple platforms or editions, so check the downloaded images and `download_report.csv`.
 - Since all images go into one flat output folder, ROMs with duplicate base filenames in different subfolders are reported as collisions and are not overwritten.
-- This tool downloads PNGs from [Libretro Thumbnails](https://github.com/libretro-thumbnails/Nintendo_-_Super_Nintendo_Entertainment_System). Follow the source project's terms and rights notices.
+- This tool retrieves images from [TheGamesDB](https://thegamesdb.net/). JPEG artwork is converted to PNG using Pillow. Follow TheGamesDB's terms and rights notices.
