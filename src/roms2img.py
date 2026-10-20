@@ -1,4 +1,4 @@
-import csv, json, os, re, threading, time, urllib.parse, urllib.request
+import json, os, re, threading, time, urllib.parse, urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
 import tkinter as tk
@@ -12,6 +12,65 @@ EXTS = ".sfc,.smc,.fig,.swc,.zip,.7z,.bin"
 UA = "roms2img/1.0"
 LIBRETRO_BASE = "https://thumbnails.libretro.com/"
 DEFAULT_SYSTEM = "Nintendo - Super Nintendo Entertainment System"
+SYSTEM_NAMES = [
+    "Nintendo - Super Nintendo Entertainment System",
+    "Nintendo - Nintendo Entertainment System",
+    "Nintendo - Game Boy",
+    "Nintendo - Game Boy Color",
+    "Nintendo - Game Boy Advance",
+    "Nintendo - Nintendo 64",
+    "Nintendo - Nintendo DS",
+    "Nintendo - Nintendo 3DS",
+    "Nintendo - Nintendo Switch",
+    "Nintendo - Virtual Boy",
+    "Nintendo - GameCube",
+    "Nintendo - Wii",
+    "Nintendo - Wii U",
+    "Nintendo - Pokemon Mini",
+    "Nintendo - Famicom Disk System",
+    "Nintendo - Super Game Boy",
+    "Sega - Mega Drive - Genesis",
+    "Sega - Master System - Mark III",
+    "Sega - Game Gear",
+    "Sega - Saturn",
+    "Sega - Dreamcast",
+    "Sega - 32X",
+    "Sega - CD",
+    "Sega - SG-1000",
+    "Sony - PlayStation",
+    "Sony - PlayStation 2",
+    "Sony - PlayStation Portable",
+    "Sony - PlayStation Vita",
+    "Microsoft - Xbox",
+    "Microsoft - Xbox 360",
+    "NEC - PC Engine - TurboGrafx 16",
+    "NEC - PC Engine CD - TurboGrafx-CD",
+    "NEC - SuperGrafx",
+    "SNK - Neo Geo",
+    "SNK - Neo Geo Pocket",
+    "SNK - Neo Geo Pocket Color",
+    "Atari - 2600",
+    "Atari - 5200",
+    "Atari - 7800",
+    "Atari - Lynx",
+    "Atari - Jaguar",
+    "Bandai - WonderSwan",
+    "Bandai - WonderSwan Color",
+    "Commodore - Amiga",
+    "Commodore - C64",
+    "DOS",
+    "Arcade",
+    "MAME",
+    "FinalBurn Neo",
+    "CPS1",
+    "CPS2",
+    "CPS3",
+    "Sharp - X68000",
+    "MSX",
+    "Amstrad - CPC",
+    "Tandy - TRS-80",
+    "Apple - Macintosh",
+]
 THUMB_TYPES = [("Named_Boxarts", "パッケージ画像"), ("Named_Snaps", "ゲーム画面"), ("Named_Titles", "タイトル画面")]
 _THUMB_INDEX = {}
 
@@ -163,11 +222,6 @@ def libretro_candidates(filename):
                 return urllib.parse.urljoin(folder_url, urllib.parse.quote(actual_name, safe="")), label, folder_url
     return None
 
-def write_report(path, rows):
-    with open(path, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.writer(f)
-        w.writerow(["ROM", "結果", "画像種別", "保存先", "詳細"])
-        w.writerows(rows)
 
 class App(tk.Tk):
     def __init__(self):
@@ -196,7 +250,9 @@ class App(tk.Tk):
         ttk.Label(f, text="対象拡張子").grid(row=2, column=0, sticky="w", padx=6, pady=5)
         ttk.Entry(f, textvariable=self.exts).grid(row=2, column=1, sticky="ew", padx=6, pady=5)
         ttk.Label(f, text="Libretroシステム名").grid(row=3, column=0, sticky="w", padx=6, pady=5)
-        ttk.Entry(f, textvariable=self.system_name).grid(row=3, column=1, sticky="ew", padx=6, pady=5)
+        self.system_combo = ttk.Combobox(f, textvariable=self.system_name, values=SYSTEM_NAMES, state="normal")
+        self.system_combo.grid(row=3, column=1, sticky="ew", padx=6, pady=5)
+        self.system_combo.bind("<KeyRelease>", self.filter_systems)
         ttk.Checkbutton(f, text="既存PNGをスキップして再開", variable=self.skip).grid(row=4, column=1, sticky="w", padx=6, pady=5)
         ttk.Label(f, text="取得順：Libretroのパッケージ画像 → ゲーム画面 → タイトル画面 → TheGamesDB。").grid(row=5, column=0, columnspan=3, sticky="w", padx=6, pady=5)
         self.bar = ttk.Progressbar(f, mode="determinate"); self.bar.grid(row=6, column=0, columnspan=3, sticky="ew", padx=6, pady=5)
@@ -207,6 +263,15 @@ class App(tk.Tk):
         self.stop_btn = ttk.Button(buttons, text="停止", command=self.stop, state="disabled"); self.stop_btn.pack(side="left", padx=8)
         ttk.Button(buttons, text="保存先を開く", command=self.open_output).pack(side="left")
         f.columnconfigure(1, weight=1); f.rowconfigure(8, weight=1)
+
+    def filter_systems(self, event=None):
+        # Keep the combobox editable, while narrowing the dropdown as the user types.
+        current = self.system_name.get()
+        query = current.casefold().strip()
+        matches = [name for name in SYSTEM_NAMES if query in name.casefold()] if query else SYSTEM_NAMES
+        self.system_combo.configure(values=matches if matches else SYSTEM_NAMES)
+        self.system_combo.set(current)
+        self.system_combo.icursor("end")
 
     def choose_rom(self):
         p = filedialog.askdirectory(title="SNES ROMフォルダ")
@@ -260,7 +325,6 @@ class App(tk.Tk):
     def worker(self, rom_dir, out_dir, ext_text, skip_existing, system_name):
         global system_name_for_run
         system_name_for_run = system_name
-        rows = []
         try:
             out_dir.mkdir(parents=True, exist_ok=True)
             exts = {"." + x.strip().lower().lstrip(".") for x in ext_text.split(",") if x.strip()}
@@ -276,18 +340,15 @@ class App(tk.Tk):
             ok = missing = failed = skipped = collisions = 0
             for i, rom in enumerate(roms, 1):
                 if self.stop_event.is_set():
-                    rows.append([str(rom), "停止", "", "", "利用者が停止"])
                     break
                 dest = out_dir / (rom.stem + ".png")
                 if counts[rom.stem.casefold()] > 1:
                     collisions += 1
-                    rows.append([str(rom), "同名衝突", "", str(dest), "保存先に同名ファイルを作れないため未処理"])
                     self.log_line("[同名衝突] " + rom.name)
                     self.after(0, lambda value=i: self.bar.configure(value=value))
                     continue
                 if skip_existing and dest.exists() and dest.stat().st_size:
                     skipped += 1
-                    rows.append([str(rom), "スキップ", "", str(dest), "既存PNG"])
                     self.after(0, lambda value=i: self.bar.configure(value=value))
                     continue
                 try:
@@ -323,20 +384,15 @@ class App(tk.Tk):
                         tmp.write_bytes(data)
                         tmp.replace(dest)
                     ok += 1
-                    rows.append([str(rom), "成功", source_name, str(dest), source_page + " | " + image_url])
                     self.log_line(f"[成功] {rom.name} ← {source_name}")
                 except Exception as e:
                     missing += 1
-                    rows.append([str(rom), "未取得", "", "", str(e)])
                     self.log_line(f"[未取得] {rom.name}: {e}")
                 self.after(0, lambda value=i: self.bar.configure(value=value))
                 self.set_status(f"{i}/{len(roms)} | 成功 {ok} | 未取得 {missing} | 失敗 {failed} | スキップ {skipped}")
                 time.sleep(0.15)
-            report = out_dir / "download_report.csv"
-            write_report(report, rows)
             self.set_status(f"終了 | 成功 {ok} | 未取得 {missing} | 失敗 {failed} | スキップ {skipped} | 同名衝突 {collisions}")
-            self.log_line("結果CSV: " + str(report))
-            self.after(0, lambda: messagebox.showinfo("処理終了", f"成功: {ok}\n未取得: {missing}\n失敗: {failed}\nスキップ: {skipped}\n同名衝突: {collisions}\n\n{report}"))
+            self.after(0, lambda: messagebox.showinfo("処理終了", f"成功: {ok}\n未取得: {missing}\n失敗: {failed}\nスキップ: {skipped}\n同名衝突: {collisions}"))
         except Exception as e:
             self.log_line("[エラー] " + str(e))
             self.set_status("エラー: " + str(e))
