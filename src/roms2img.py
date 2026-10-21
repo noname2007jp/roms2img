@@ -71,7 +71,7 @@ SYSTEM_NAMES = [
     "Tandy - TRS-80",
     "Apple - Macintosh",
 ]
-THUMB_TYPES = [("Named_Boxarts", "パッケージ画像"), ("Named_Snaps", "ゲーム画面"), ("Named_Titles", "タイトル画面")]
+THUMB_TYPES = [("Named_Snaps", "ゲーム画面"), ("Named_Titles", "タイトル画面"), ("Named_Logos", "ゲームロゴ"), ("Named_Boxarts", "パッケージ画像")]
 _THUMB_INDEX = {}
 
 def get_bytes(url, timeout=30):
@@ -202,25 +202,68 @@ def listing_names(url):
     _THUMB_INDEX[url] = names
     return names
 
+def filename_tokens(value):
+    value = Path(value).stem
+    value = re.sub(r"[([][^)\]]*[)\]]", " ", value)
+    return [t.casefold() for t in re.findall(r"[A-Za-z0-9]+|[^\W\d_]+", value)]
+
+def best_thumbnail(filename, thumb_type):
+    folder_url = libretro_system_url(system_name_for_run, thumb_type)
+    names = listing_names(folder_url)
+    query_tokens = filename_tokens(filename)
+    if not query_tokens:
+        return None
+    query_set = set(query_tokens)
+    ranked = []
+    for name in names:
+        candidate_tokens = filename_tokens(name)
+        if not candidate_tokens:
+            continue
+        candidate_set = set(candidate_tokens)
+        matched = len(query_set & candidate_set)
+        if matched == 0:
+            continue
+        # Prefer more matching words, then fewer extra words, then exact basename.
+        extra = len(candidate_set - query_set)
+        exact = int(norm(name) == norm(filename))
+        ranked.append(((matched, -extra, exact), name))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    best_score = ranked[0][0]
+    best_names = [name for score, name in ranked if score == best_score]
+    # A true tie is resolved deterministically by case-insensitive filename.
+    actual_name = sorted(best_names, key=str.casefold)[0]
+    return urllib.parse.urljoin(folder_url, urllib.parse.quote(actual_name, safe="")), thumb_type, folder_url
+
 def libretro_candidates(filename):
-    # Try the exact ROM basename first, including region tags such as (Japan).
-    # Then try common filename variants. Keep image type priority explicit.
-    stem = Path(filename).stem
-    variants = [stem]
-    variants.append(re.sub(r"[&*/:< >?\\\\|]", "_", stem))
-    variants.extend([Path(v).stem for v in keys(filename)])
-    seen = set()
+    # Prefer gameplay screenshots, then title screens, logos, and box art.
     for thumb_type, label in THUMB_TYPES:
-        folder_url = libretro_system_url(system_name_for_run, thumb_type)
-        names = listing_names(folder_url)
-        names_by_fold = {name.casefold(): name for name in names}
-        for variant in variants:
-            candidate = variant + ".png"
-            actual_name = names_by_fold.get(candidate.casefold())
-            if actual_name and actual_name.casefold() not in seen:
-                seen.add(actual_name.casefold())
-                return urllib.parse.urljoin(folder_url, urllib.parse.quote(actual_name, safe="")), label, folder_url
+        found = best_thumbnail(filename, thumb_type)
+        if found:
+            url, _, folder_url = found
+            return url, label, folder_url
     return None
+
+def libretro_boxart(filename):
+    return best_thumbnail(filename, "Named_Boxarts")
+
+def composite_snap_with_boxart(snap_data, box_data):
+    from PIL import Image
+    import io
+    snap = Image.open(io.BytesIO(snap_data)).convert("RGBA")
+    box = Image.open(io.BytesIO(box_data)).convert("RGBA")
+    target_w = max(1, int(snap.width * 0.27))
+    scale = min(target_w / box.width, snap.height / box.height)
+    box = box.resize((max(1, int(box.width * scale)), max(1, int(box.height * scale))), Image.Resampling.LANCZOS)
+    # Keep the screenshot canvas size; embed the scaled box art on its left edge.
+    canvas = snap.copy()
+    x = max(0, (target_w - box.width) // 2)
+    y = max(0, (snap.height - box.height) // 2)
+    canvas.alpha_composite(box, (x, y))
+    output = io.BytesIO()
+    canvas.save(output, format="PNG")
+    return output.getvalue()
 
 
 class App(tk.Tk):
@@ -234,6 +277,7 @@ class App(tk.Tk):
         self.exts = tk.StringVar(value=EXTS)
         self.system_name = tk.StringVar(value=DEFAULT_SYSTEM)
         self.skip = tk.BooleanVar(value=True)
+        self.use_thegamesdb = tk.BooleanVar(value=False)
         self.status = tk.StringVar(value="ROMフォルダと画像保存先を指定してください。")
         self.stop_event = threading.Event()
         self.busy = False
@@ -254,11 +298,12 @@ class App(tk.Tk):
         self.system_combo.grid(row=3, column=1, sticky="ew", padx=6, pady=5)
         self.system_combo.bind("<KeyRelease>", self.filter_systems)
         ttk.Checkbutton(f, text="既存PNGをスキップして再開", variable=self.skip).grid(row=4, column=1, sticky="w", padx=6, pady=5)
-        ttk.Label(f, text="取得順：Libretroのパッケージ画像 → ゲーム画面 → タイトル画面 → TheGamesDB。").grid(row=5, column=0, columnspan=3, sticky="w", padx=6, pady=5)
-        self.bar = ttk.Progressbar(f, mode="determinate"); self.bar.grid(row=6, column=0, columnspan=3, sticky="ew", padx=6, pady=5)
-        ttk.Label(f, textvariable=self.status).grid(row=7, column=0, columnspan=3, sticky="w", padx=6, pady=5)
-        self.log = tk.Text(f, height=19, wrap="word", state="disabled"); self.log.grid(row=8, column=0, columnspan=3, sticky="nsew", padx=6, pady=5)
-        buttons = ttk.Frame(f); buttons.grid(row=9, column=0, columnspan=3, sticky="w", padx=6, pady=5)
+        ttk.Checkbutton(f, text="Libretroで見つからない場合、TheGamesDBでも検索する（誤画像に注意）", variable=self.use_thegamesdb).grid(row=5, column=1, sticky="w", padx=6, pady=5)
+        ttk.Label(f, text="取得順：Libretroのゲーム画面 → タイトル画面 → ロゴ → パッケージ画像。ゲーム画面にはパッケージ画像を左側に合成します。").grid(row=6, column=0, columnspan=3, sticky="w", padx=6, pady=5)
+        self.bar = ttk.Progressbar(f, mode="determinate"); self.bar.grid(row=7, column=0, columnspan=3, sticky="ew", padx=6, pady=5)
+        ttk.Label(f, textvariable=self.status).grid(row=8, column=0, columnspan=3, sticky="w", padx=6, pady=5)
+        self.log = tk.Text(f, height=19, wrap="word", state="disabled"); self.log.grid(row=9, column=0, columnspan=3, sticky="nsew", padx=6, pady=5)
+        buttons = ttk.Frame(f); buttons.grid(row=10, column=0, columnspan=3, sticky="w", padx=6, pady=5)
         self.start_btn = ttk.Button(buttons, text="開始", command=self.start); self.start_btn.pack(side="left")
         self.stop_btn = ttk.Button(buttons, text="停止", command=self.stop, state="disabled"); self.stop_btn.pack(side="left", padx=8)
         ttk.Button(buttons, text="保存先を開く", command=self.open_output).pack(side="left")
@@ -307,7 +352,7 @@ class App(tk.Tk):
             messagebox.showerror("入力エラー", "Libretroシステム名を入力してください。"); self.busy = False; self.start_btn.configure(state="normal"); self.stop_btn.configure(state="disabled"); return
         if not messagebox.askyesno("システム名の確認", f"Libretroの画像フォルダ名を次の名前として検索します。\n\n{system_name}\n\nROMフォルダ名とは異なる場合があります。正しいですか？\n\n画像フォルダ例：{system_name}/Named_Boxarts/"):
             self.busy = False; self.start_btn.configure(state="normal"); self.stop_btn.configure(state="disabled"); return
-        threading.Thread(target=self.worker, args=(rom, out, self.exts.get(), self.skip.get(), system_name), daemon=True).start()
+        threading.Thread(target=self.worker, args=(rom, out, self.exts.get(), self.skip.get(), system_name, self.use_thegamesdb.get()), daemon=True).start()
 
     def stop(self):
         self.stop_event.set(); self.set_status("停止要求を受け付けました。処理中の通信が終わると停止します。")
@@ -322,7 +367,7 @@ class App(tk.Tk):
         self.after(0, lambda: self.start_btn.configure(state="normal"))
         self.after(0, lambda: self.stop_btn.configure(state="disabled"))
 
-    def worker(self, rom_dir, out_dir, ext_text, skip_existing, system_name):
+    def worker(self, rom_dir, out_dir, ext_text, skip_existing, system_name, use_thegamesdb):
         global system_name_for_run
         system_name_for_run = system_name
         try:
