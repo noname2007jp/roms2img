@@ -406,13 +406,21 @@ class App(tk.Tk):
                     if libretro:
                         image_url, image_kind, source_page = libretro
                         source_name = "Libretro/" + image_kind
-                    else:
+                        data = get_bytes(image_url)
+                        if image_kind == "ゲーム画面":
+                            try:
+                                boxart = libretro_boxart(rom.name)
+                                if boxart:
+                                    data = composite_snap_with_boxart(data, get_bytes(boxart[0]))
+                                    source_name += " + パッケージ合成"
+                            except Exception as e:
+                                self.log_line(f"[警告] {rom.name}: パッケージ画像の合成をスキップ: {e}")
+                    elif use_thegamesdb:
                         image_url, source_page = find_thegamesdb_image(rom.name)
-                        image_kind = "TheGamesDB"
                         source_name = "TheGamesDB"
-                        if libretro_error:
-                            source_page += " | Libretro lookup error: " + libretro_error
-                    data = get_bytes(image_url)
+                        data = get_bytes(image_url)
+                    else:
+                        raise ValueError("Libretroに一致する画像がありません（TheGamesDB検索はオプションで無効です）")
                     if not data.startswith(b"\x89PNG\r\n\x1a\n"):
                         # TheGamesDB may serve JPEG artwork. Convert to PNG when Pillow is available.
                         try:
